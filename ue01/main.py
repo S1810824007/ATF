@@ -1,6 +1,16 @@
 import cv2
 import numpy as np
 from util import draw_line
+import base64
+from io import BytesIO
+import numpy as np
+import cv2
+from PIL import Image
+from flask import Flask
+from flask_socketio import SocketIO
+
+app = Flask(__name__)
+socket_io = SocketIO(app)
 
 def filterSameLine(matrix_d_a, H, same_line_thresh_d, same_line_thresh_a, max_angle):
     SAME_LINES = []
@@ -82,12 +92,14 @@ def filterSameLine(matrix_d_a, H, same_line_thresh_d, same_line_thresh_a, max_an
             index += 1
     return SAME_LINES
 
+
 def canny():
     img = cv2.imread("data/porsche.png", cv2.IMREAD_GRAYSCALE)
     canny = cv2.Canny(img, 100, 200)
     cv2.imshow("canny", canny)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
 
 def hough(image, threshold, same_line_thresh_d, same_line_thresh_a, street_lane_thresh, STEPS=False):
     img = cv2.resize(image, (640, 360))
@@ -123,12 +135,12 @@ def hough(image, threshold, same_line_thresh_d, same_line_thresh_a, street_lane_
     for (d, angle) in np.argwhere(H >= threshold):
         if d > max_d:
             d = d - range_d
-        matrix_d_a.append([d,angle,H[int(d), int(angle)]])
+        matrix_d_a.append([d, angle, H[int(d), int(angle)]])
 
     matrix_d_a = np.array(matrix_d_a)
     matrix_d_a = matrix_d_a[matrix_d_a[:, 2].argsort()]
     matrix_d_a = matrix_d_a[::-1]
-    matrix_d_a = matrix_d_a[:,0:2].tolist()
+    matrix_d_a = matrix_d_a[:, 0:2].tolist()
 
     SAME_LINES = filterSameLine(matrix_d_a, H, same_line_thresh_d, same_line_thresh_a, max_angle)
 
@@ -168,6 +180,7 @@ def hough(image, threshold, same_line_thresh_d, same_line_thresh_a, street_lane_
         cv2.destroyAllWindows()
 
     return img
+
 
 def filterSameLineUE02(matrix_d_a, same_line_thresh_d, same_line_thresh_a, max_angle):
     SAME_LINES = []
@@ -217,8 +230,10 @@ def filterSameLineUE02(matrix_d_a, same_line_thresh_d, same_line_thresh_a, max_a
                                     buff = matrix_d_a[j]
                                     already_used.append(buff)
                                     same_line_d_a.append(buff)
-                        elif matrix_d_a[j][0] in range(current[0] - same_line_thresh_d, current[0] + same_line_thresh_d):
-                            if matrix_d_a[j][1] in range(current[1] - same_line_thresh_a, current[1] + same_line_thresh_a):
+                        elif matrix_d_a[j][0] in range(current[0] - same_line_thresh_d,
+                                                       current[0] + same_line_thresh_d):
+                            if matrix_d_a[j][1] in range(current[1] - same_line_thresh_a,
+                                                         current[1] + same_line_thresh_a):
                                 # identical lines and not used already -> add them to same_line_d_a
                                 buff = matrix_d_a[j]
                                 already_used.append(buff)
@@ -230,6 +245,7 @@ def filterSameLineUE02(matrix_d_a, same_line_thresh_d, same_line_thresh_a, max_a
                 SAME_LINES.append(same_line_d_a[0])
             index += 1
     return SAME_LINES
+
 
 def houghUE2(img, threshold, same_line_thresh_d, same_line_thresh_a, street_lane_thresh, STEPS=False):
     img = cv2.resize(img, (640, 360))
@@ -246,7 +262,7 @@ def houghUE2(img, threshold, same_line_thresh_d, same_line_thresh_a, street_lane
     theta_res = np.pi / 180
     lines = cv2.HoughLines(canny, d_res, theta_res, threshold)
 
-    lines[:,0,1] = np.rad2deg(lines[:,0,1])
+    lines[:, 0, 1] = np.rad2deg(lines[:, 0, 1])
 
     matrix_d_a = []
     for line in lines:
@@ -261,28 +277,30 @@ def houghUE2(img, threshold, same_line_thresh_d, same_line_thresh_a, street_lane
     left_x = 0
     left_line = False
     for max in SAME_LINES:
-        if(right_line and left_line):
+        if (right_line and left_line):
             break
-        x = (max[0] - (len(img)-1) * np.sin(np.deg2rad(max[1]))) / np.cos(np.deg2rad(max[1]))
+        x = (max[0] - (len(img) - 1) * np.sin(np.deg2rad(max[1]))) / np.cos(np.deg2rad(max[1]))
         if STEPS:
             draw_line(img, max[0], np.deg2rad(max[1]), (200, 200, 200))
             cv2.imshow("image", img)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
-        if(x > 0 and x < len(img[0]) * 1.2):
-            if(max[1] in range(120-street_lane_thresh, 120 + street_lane_thresh) and not right_line):
+        if (x > 0 and x < len(img[0]) * 1.2):
+            if (max[1] in range(120 - street_lane_thresh, 120 + street_lane_thresh) and not right_line):
                 print("right: ", max)
                 right_x = x - (len(img[0]) / 2)
                 draw_line(img, max[0], np.deg2rad(max[1]), (0, 0, 255))
                 right_line = True
-            elif(max[1] in range(60-street_lane_thresh, 60 + street_lane_thresh) and not left_line):
+            elif (max[1] in range(60 - street_lane_thresh, 60 + street_lane_thresh) and not left_line):
                 print("left: ", max)
                 left_x = (len(img[0]) / 2) - x
                 draw_line(img, max[0], np.deg2rad(max[1]), (0, 255, 0))
                 left_line = True
 
-    img = cv2.putText(img, "R: " + str(round(right_x)) + "px", (len(img[0]) // 2 + 100, len(img) - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 1, cv2.LINE_AA)
-    img = cv2.putText(img, "L: " + str(round(left_x)) + "px", (len(img[0]) // 2 - 100, len(img) - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 1, cv2.LINE_AA)
+    img = cv2.putText(img, "R: " + str(round(right_x)) + "px", (len(img[0]) // 2 + 100, len(img) - 10),
+                      cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 1, cv2.LINE_AA)
+    img = cv2.putText(img, "L: " + str(round(left_x)) + "px", (len(img[0]) // 2 - 100, len(img) - 10),
+                      cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 1, cv2.LINE_AA)
 
     if STEPS:
         cv2.imshow("image", img)
@@ -290,6 +308,7 @@ def houghUE2(img, threshold, same_line_thresh_d, same_line_thresh_a, street_lane
         cv2.destroyAllWindows()
 
     return img
+
 
 def video(thresh_hough, thresh_same_d, thresh_same_a, thresh_a):
     cap = cv2.VideoCapture("data/highway1.mp4")
@@ -299,23 +318,74 @@ def video(thresh_hough, thresh_same_d, thresh_same_a, thresh_a):
             break
 
         img = houghUE2(frame, thresh_hough, thresh_same_d, thresh_same_a, thresh_a)
-        #img = hough(frame, thresh_hough, thresh_same_d, thresh_same_a, thresh_a)
+        # img = hough(frame, thresh_hough, thresh_same_d, thresh_same_a, thresh_a)
         cv2.imshow("Result", img)
         cv2.waitKey(30)
 
     cv2.destroyAllWindows()
     cap.release()
 
+@socket_io.on('telemetry')
+def telemetry(data):
+    if data:
+        speed = float(data["speed"])
+        angle = float(data["steering_angle"])
+        image = Image.open(BytesIO(base64.b64decode(data["image"])))
+        image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+        thresh_hough = 40  # 40 80
+        thresh_same_d = 50  # 50 20
+        thresh_same_a = 15  # 15 15
+        thresh_a = 25  # 25 20
+
+        #image = houghUE2(image, thresh_hough, thresh_same_d, thresh_same_a, thresh_a)
+
+        #cv2.imshow("Result", image)
+        #cv2.waitKey(30)
+        # TODO: calculate steering angle and throttle from image and speed
+
+
+        steering = angle / 25
+
+        if steering > 0.95:
+            global inc
+            inc = -0.1
+        elif steering < -0.95:
+            inc = 0.1
+
+        steering += inc
+
+        print(steering)
+        send_control(steering, 0.2)
+
+    else:
+        socket_io.emit('manual', data={}, skip_sid=True)
+
+
+def send_control(steering_angle, throttle):
+    socket_io.emit(
+        "steer",
+        data={
+            'steering_angle': steering_angle.__str__(),
+            'throttle': throttle.__str__()
+        },
+        skip_sid=True)
+
+
 if __name__ == '__main__':
-    thresh_hough = 40       #40 80
-    thresh_same_d = 50      #50 20
-    thresh_same_a = 15      #15 15
-    thresh_a = 25           #25 20
+    global inc
+    inc = -0.3
+    thresh_hough = 40  # 40 80
+    thresh_same_d = 50  # 50 20
+    thresh_same_a = 15  # 15 15
+    thresh_a = 25  # 25 20
 
-    #img = cv2.imread("data/triangle.png")
-    img = cv2.imread("data/highway1-1.png")
+    # img = cv2.imread("data/triangle.png")
+    # img = cv2.imread("data/highway1-1.png")
 
-    hough(img, thresh_hough, thresh_same_d, thresh_same_a, thresh_a, True)
-    #houghUE2(img, thresh_hough, thresh_same_d, thresh_same_a, thresh_a, True)
+    # hough(img, thresh_hough, thresh_same_d, thresh_same_a, thresh_a, True)
+    # houghUE2(img, thresh_hough, thresh_same_d, thresh_same_a, thresh_a, True)
 
-    #video(thresh_hough, thresh_same_d, thresh_same_a, thresh_a)
+    # video(thresh_hough, thresh_same_d, thresh_same_a, thresh_a)
+
+    socket_io.run(app, port=4567);
