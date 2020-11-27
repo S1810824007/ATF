@@ -11,10 +11,10 @@ def draw_line(image, d, theta, color=(0, 0, 255)):
     x0 = a * d
     y0 = b * d
 
-    x1 = int(x0 + 1000 * (-b))
-    y1 = int(y0 + 1000 * a)
-    x2 = int(x0 - 1000 * (-b))
-    y2 = int(y0 - 1000 * a)
+    x1 = int(x0 + 10000 * (-b))
+    y1 = int(y0 + 10000 * a)
+    x2 = int(x0 - 10000 * (-b))
+    y2 = int(y0 - 10000 * a)
 
     cv2.line(image, (x1, y1), (x2, y2), color, 1)
 
