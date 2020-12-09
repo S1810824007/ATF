@@ -1,5 +1,3 @@
-import cv2
-import numpy as np
 from util import draw_line
 import base64
 from io import BytesIO
@@ -75,32 +73,8 @@ def filterSameLine(matrix_d_a, H, same_line_thresh_d, same_line_thresh_a, max_an
             if same_line_d_a != []:
                 # print("Same lines: \n", same_line_d_a)
                 SAME_LINES.append(same_line_d_a[0])
-
-            # # now identify the highest vote and print the line
-            # max = 0
-            # current_max = 0
-            # if same_line_d_a != []:
-            #     #print("\nSame lines: ", same_line_d_a)
-            #     for i in range(0, len(same_line_d_a)):
-            #         #draw_line(img, same_line_d_a[i][0], np.deg2rad(same_line_d_a[i][1]), (150,150,150))
-            #         h = H[same_line_d_a[i][0], same_line_d_a[i][1]]
-            #         if h > current_max:
-            #             current_max = h
-            #             max = same_line_d_a[i]
-            #
-            #     #print("Highes Vote: ", H[max[0], max[1]], " ", max)
-            #     SAME_LINES.append(max)
             index += 1
     return SAME_LINES
-
-
-def canny():
-    img = cv2.imread("data/porsche.png", cv2.IMREAD_GRAYSCALE)
-    canny = cv2.Canny(img, 100, 200)
-    cv2.imshow("canny", canny)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
 
 def hough(image, threshold, same_line_thresh_d, same_line_thresh_a, street_lane_thresh, STEPS=False):
     img = cv2.resize(image, (640, 360))
@@ -123,14 +97,6 @@ def hough(image, threshold, same_line_thresh_d, same_line_thresh_a, street_lane_
     y = buff[:, 0]
 
     H = np.zeros([range_d // step_d, max_angle // step_angle], dtype=np.uint8)
-
-    """
-    for (y, x) in np.argwhere(canny != 0):
-        for angle in range(0, max_angle, step_angle):
-            angle_rad = np.deg2rad(angle)
-            d = x * np.cos(angle_rad) + y * np.sin(angle_rad)
-            H[int(d / step_d), angle // step_angle] += 1;
-    """
 
     for angle in range(0, max_angle, step_angle):
         angle_rad = np.deg2rad(angle)
@@ -166,14 +132,14 @@ def hough(image, threshold, same_line_thresh_d, same_line_thresh_a, street_lane_
             cv2.imshow("image", img)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
-        if (x > 0 and x < len(img[0]) * 1.2):
+        if (x > -len(img[0])*0.2 and x < len(img[0]) * 1.2):
             if (max[1] in range(120 - street_lane_thresh, 120 + street_lane_thresh) and not right_line):
-                print("right: ", max)
+                #print("right: ", max)
                 right_x = x - (len(img[0]) / 2)
                 draw_line(img, max[0], np.deg2rad(max[1]), (0, 0, 255))
                 right_line = True
             elif (max[1] in range(60 - street_lane_thresh, 60 + street_lane_thresh) and not left_line):
-                print("left: ", max)
+                #print("left: ", max)
                 left_x = (len(img[0]) / 2) - x
                 draw_line(img, max[0], np.deg2rad(max[1]), (0, 255, 0))
                 left_line = True
@@ -346,23 +312,28 @@ def telemetry(data):
         thresh_a = 15
 
         [image, left_x, right_x] = houghUE2(image, thresh_hough, thresh_same_d, thresh_same_a, thresh_a)
-        #[image, left_x, right_x] = hough(image, 70, 50, thresh_same_a, thresh_a)
+        #[image, left_x, right_x] = hough(image, 70, thresh_same_d, thresh_same_a, thresh_a)
 
         # STEERING
         buffer = left_x - right_x
+        steering_range = 0.15
+        adapt_steering_faktor = -800
+
+        # one or more lines not detected, instead of calculating steering, use the old angle
         if left_x == 0 or right_x == 0:
             print("\nONE LINE NOT DETECTED\n")
             steering = angle / 25
         else:
-            steering = np.clip(buffer / -800, -0.15, 0.15)
+            steering = np.clip(buffer / adapt_steering_faktor, -steering_range, steering_range)
 
         # THROTTLE
         throttle = 0.5
         if speed > 15:
             throttle = 0
 
-        #cv2.imshow("Result", image)
-        #cv2.waitKey(2)
+        # cv2.imshow("Result", image)
+        # cv2.waitKey(2)
+
 
         """ Aufgabe 1
         steering = angle / 25
@@ -374,9 +345,9 @@ def telemetry(data):
         steering += inc
         """
 
-        print("L: ", left_x, "\nR: ", right_x)
+        #print("L: ", left_x, "\nR: ", right_x)
+        #print("left - right: ", buffer)
         print("steering: ", steering)
-        print("left - right: ", buffer)
         global current
         print("TIME BETWEEN FRAME: ", int(round(time.time() * 1000)) - current)
         current = int(round(time.time() * 1000))
