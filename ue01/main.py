@@ -8,6 +8,7 @@ import cv2
 from PIL import Image
 from flask import Flask
 from flask_socketio import SocketIO
+import time
 
 app = Flask(__name__)
 socket_io = SocketIO(app)
@@ -123,6 +124,14 @@ def hough(image, threshold, same_line_thresh_d, same_line_thresh_a, street_lane_
 
     H = np.zeros([range_d // step_d, max_angle // step_angle], dtype=np.uint8)
 
+    """
+    for (y, x) in np.argwhere(canny != 0):
+        for angle in range(0, max_angle, step_angle):
+            angle_rad = np.deg2rad(angle)
+            d = x * np.cos(angle_rad) + y * np.sin(angle_rad)
+            H[int(d / step_d), angle // step_angle] += 1;
+    """
+
     for angle in range(0, max_angle, step_angle):
         angle_rad = np.deg2rad(angle)
         d = x * np.cos(angle_rad) + y * np.sin(angle_rad)
@@ -179,7 +188,7 @@ def hough(image, threshold, same_line_thresh_d, same_line_thresh_a, street_lane_
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-    return img
+    return [img, int(left_x), int(right_x)]
 
 
 def filterSameLineUE02(matrix_d_a, same_line_thresh_d, same_line_thresh_a, max_angle):
@@ -285,14 +294,12 @@ def houghUE2(img, threshold, same_line_thresh_d, same_line_thresh_a, street_lane
             cv2.imshow("image", img)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
-        if (x > 0 and x < len(img[0]) * 1.2):
+        if (x > -len(img[0])*0.2 and x < len(img[0]) * 1.2):
             if (max[1] in range(120 - street_lane_thresh, 120 + street_lane_thresh) and not right_line):
-                print("right: ", max)
                 right_x = x - (len(img[0]) / 2)
                 draw_line(img, max[0], np.deg2rad(max[1]), (0, 0, 255))
                 right_line = True
             elif (max[1] in range(60 - street_lane_thresh, 60 + street_lane_thresh) and not left_line):
-                print("left: ", max)
                 left_x = (len(img[0]) / 2) - x
                 draw_line(img, max[0], np.deg2rad(max[1]), (0, 255, 0))
                 left_line = True
@@ -307,7 +314,7 @@ def houghUE2(img, threshold, same_line_thresh_d, same_line_thresh_a, street_lane
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-    return img
+    return [img, int(left_x), int(right_x)]
 
 
 def video(thresh_hough, thresh_same_d, thresh_same_a, thresh_a):
@@ -333,34 +340,50 @@ def telemetry(data):
         image = Image.open(BytesIO(base64.b64decode(data["image"])))
         image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
-        thresh_hough = 40  # 40 80
-        thresh_same_d = 50  # 50 20
-        thresh_same_a = 15  # 15 15
-        thresh_a = 25  # 25 20
+        thresh_hough = 40
+        thresh_same_d = 50
+        thresh_same_a = 15
+        thresh_a = 15
 
-        #image = houghUE2(image, thresh_hough, thresh_same_d, thresh_same_a, thresh_a)
+        [image, left_x, right_x] = houghUE2(image, thresh_hough, thresh_same_d, thresh_same_a, thresh_a)
+        #[image, left_x, right_x] = hough(image, 70, 50, thresh_same_a, thresh_a)
+
+        # STEERING
+        buffer = left_x - right_x
+        if left_x == 0 or right_x == 0:
+            print("\nONE LINE NOT DETECTED\n")
+            steering = angle / 25
+        else:
+            steering = np.clip(buffer / -800, -0.15, 0.15)
+
+        # THROTTLE
+        throttle = 0.5
+        if speed > 15:
+            throttle = 0
 
         #cv2.imshow("Result", image)
-        #cv2.waitKey(30)
-        # TODO: calculate steering angle and throttle from image and speed
+        #cv2.waitKey(2)
 
-
+        """ Aufgabe 1
         steering = angle / 25
-
         if steering > 0.95:
             global inc
             inc = -0.1
         elif steering < -0.95:
             inc = 0.1
-
         steering += inc
+        """
 
-        print(steering)
-        send_control(steering, 0.2)
+        print("L: ", left_x, "\nR: ", right_x)
+        print("steering: ", steering)
+        print("left - right: ", buffer)
+        global current
+        print("TIME BETWEEN FRAME: ", int(round(time.time() * 1000)) - current)
+        current = int(round(time.time() * 1000))
+        send_control(steering, throttle)
 
     else:
         socket_io.emit('manual', data={}, skip_sid=True)
-
 
 def send_control(steering_angle, throttle):
     socket_io.emit(
@@ -373,19 +396,19 @@ def send_control(steering_angle, throttle):
 
 
 if __name__ == '__main__':
-    global inc
-    inc = -0.3
+    global current
+    current = int(round(time.time() * 1000))
+
+    """
     thresh_hough = 40  # 40 80
     thresh_same_d = 50  # 50 20
     thresh_same_a = 15  # 15 15
     thresh_a = 25  # 25 20
-
     # img = cv2.imread("data/triangle.png")
     # img = cv2.imread("data/highway1-1.png")
-
     # hough(img, thresh_hough, thresh_same_d, thresh_same_a, thresh_a, True)
     # houghUE2(img, thresh_hough, thresh_same_d, thresh_same_a, thresh_a, True)
-
     # video(thresh_hough, thresh_same_d, thresh_same_a, thresh_a)
+    """
 
     socket_io.run(app, port=4567);
